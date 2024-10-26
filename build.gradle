@@ -4,18 +4,12 @@ def mavenArtifactId = "readability4j"
 
 buildscript {
     ext {
-        kotlin_version = '1.3.72'
-
-        slf4jVersion = '1.7.25'
-
-        jsoupVersion = '1.11.2'
-
-        jacksonVersion = '2.9.2'
-
-        logbackVersion = '1.2.3'
-
+        kotlin_version = '2.0.0'
+        slf4jVersion = '2.0.16'
+        jsoupVersion = '1.18.1'
+        jacksonVersion = '2.17.0'
+        logbackVersion = '1.5.12'
         diffUtilsVersion = '2.2'
-
         okHttpVersion = '3.9.1'
     }
 
@@ -28,127 +22,113 @@ buildscript {
     }
 }
 
-
 apply plugin: 'java'
 apply plugin: 'kotlin'
-
-apply plugin: 'maven'
+apply plugin: 'maven-publish'
 apply plugin: 'signing'
 
-// So after executing uploadArchives staged repository can be closed and released by executing closeAndReleaseRepository
-apply plugin: 'io.codearte.nexus-staging'
-
-
-sourceCompatibility = 1.7 // for Android use compatibility with Java 7
+sourceCompatibility = 1.8
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    compile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation "org.slf4j:slf4j-api:$slf4jVersion"
+    implementation "org.jsoup:jsoup:$jsoupVersion"
 
-    compile "org.slf4j:slf4j-api:$slf4jVersion"
-
-    compile "org.jsoup:jsoup:$jsoupVersion"
-
-
-    testCompile "junit:junit:4.12"
-
-    testCompile "com.fasterxml.jackson.module:jackson-module-kotlin:$jacksonVersion"
-
-    testCompile "com.github.wumpz:diffutils:$diffUtilsVersion"
-
-    testCompile "com.squareup.okhttp3:okhttp:$okHttpVersion"
-
-    testCompile "ch.qos.logback:logback-core:$logbackVersion"
-    testCompile "ch.qos.logback:logback-classic:$logbackVersion"
+    testImplementation "junit:junit:4.12"
+    testImplementation "com.fasterxml.jackson.module:jackson-module-kotlin:$jacksonVersion"
+    testImplementation "com.github.wumpz:diffutils:$diffUtilsVersion"
+    testImplementation "com.squareup.okhttp3:okhttp:$okHttpVersion"
+    testImplementation "ch.qos.logback:logback-core:$logbackVersion"
+    testImplementation "ch.qos.logback:logback-classic:$logbackVersion"
 }
 
-
 compileKotlin {
-    kotlinOptions.jvmTarget = "1.6"
+    kotlinOptions.jvmTarget = "1.8"
 }
 
 compileTestKotlin {
-    kotlinOptions.jvmTarget = "1.6"
+    kotlinOptions.jvmTarget = "1.8"
 }
 
+/*          Publish to Maven Central            */
 
-
-/*          publish to maven central            */
-
-// set ossrhUsername and ossrhPassword in your gradle.properties (in ~/.gradle/gradle.properties or project's gradle.properties)
+// Set OSSRH credentials in gradle.properties (in ~/.gradle/gradle.properties or project's gradle.properties)
 def areOssrhPropertiesSet = isPropertySet('ossrhUsername') && isPropertySet('ossrhPassword')
 
 def isPropertySet(propertyName) {
-    return properties[propertyName] != null &&  ! (properties[propertyName] as String).isEmpty()
+    return properties[propertyName] != null && !(properties[propertyName] as String).isEmpty()
 }
 
-task javadocJar(type: Jar) {
-    classifier = 'javadoc'
-    from javadoc
+// Javadoc and sources JAR tasks
+tasks.register('javadocJar', Jar) {
+    archiveClassifier.set('javadoc')
+    from tasks.javadoc
 }
 
-task sourcesJar(type: Jar) {
-    classifier = 'sources'
+tasks.register('sourcesJar', Jar) {
+    archiveClassifier.set('sources')
     from sourceSets.main.allSource
 }
 
-artifacts {
-    archives javadocJar, sourcesJar
-}
+// Publishing artifacts
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifact(tasks.named('javadocJar'))
+            artifact(tasks.named('sourcesJar'))
 
-signing {
-    sign configurations.archives
-}
-
-uploadArchives {
-    repositories {
-        mavenDeployer {
-            beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
-
-            repository url: repositories.mavenLocal().url
-
-            if (areOssrhPropertiesSet) {
-                repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
-                    authentication(userName: ossrhUsername, password: ossrhPassword)
-                }
-
-                snapshotRepository(url: "https://oss.sonatype.org/content/repositories/snapshots/") {
-                    authentication(userName: ossrhUsername, password: ossrhPassword)
-                }
-            }
-
-            pom.project {
-                name mavenArtifactId
-                artifactId = mavenArtifactId
-                packaging 'jar'
-                // optionally artifactId can be defined here
-                description "A Kotlin port of Mozilla‘s Readability. It extracts a website‘s relevant content and removes all clutter from it."
-                url 'https://github.com/dankito/Readability4J'
+            // POM metadata
+            pom {
+                name.set(mavenArtifactId)
+                description.set("A Kotlin port of Mozilla‘s Readability. It extracts a website‘s relevant content and removes all clutter from it.")
+                url.set("https://github.com/dankito/Readability4J")
+                packaging = 'jar'
 
                 scm {
-                    connection 'scm:git:git://github.com/dankito/Readability4J.git'
-                    developerConnection 'scm:git:git@github.com:dankito/Readability4J.git'
-                    url 'https://github.com/dankito/Readability4J'
+                    connection.set("scm:git:git://github.com/dankito/Readability4J.git")
+                    developerConnection.set("scm:git:git@github.com:dankito/Readability4J.git")
+                    url.set("https://github.com/dankito/Readability4J")
                 }
 
                 licenses {
                     license {
-                        name 'The Apache License, Version 2.0'
-                        url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                        name.set("The Apache License, Version 2.0")
+                        url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
                     }
                 }
 
                 developers {
                     developer {
-                        id 'dankito'
-                        name 'Christian Dankl'
-                        email 'maven@dankito.net'
+                        id.set("dankito")
+                        name.set("Christian Dankl")
+                        email.set("maven@dankito.net")
                     }
                 }
             }
         }
     }
+
+    repositories {
+        maven {
+            if (areOssrhPropertiesSet) {
+                url = uri("https://oss.sonatype.org/service/local/staging/deploy/maven2/")
+                credentials {
+                    username = findProperty("ossrhUsername")
+                    password = findProperty("ossrhPassword")
+                }
+            } else {
+                url = uri(repositories.mavenLocal().url)
+            }
+        }
+    }
+}
+
+// Signing artifacts
+signing {
+    sign publishing.publications.mavenJava
 }
