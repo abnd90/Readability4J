@@ -1,5 +1,5 @@
 group 'net.dankito.readability4j'
-version '1.0.8'
+version '1.0.9'
 def mavenArtifactId = "readability4j"
 
 buildscript {
@@ -125,10 +125,15 @@ publishing {
                 url = uri(repositories.mavenLocal().url)
             }
         }
+        maven {
+            url = uri("${project.buildDir}/repo")
+        }
     }
 }
 
 // Signing artifacts
+/*
 signing {
     sign publishing.publications.mavenJava
 }
+ */
