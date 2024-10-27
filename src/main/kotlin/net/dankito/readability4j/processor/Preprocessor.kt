@@ -30,8 +30,6 @@ open class Preprocessor(protected val regEx: RegExUtil = RegExUtil()) : Processo
 
         removeForms(document) // TODO: this is not in Mozilla's Readability
 
-        removeComments(document) // TODO: this is not in Mozilla's Readability
-
         replaceBrs(document, regEx)
 
         replaceNodes(document, "font", "span")
@@ -85,21 +83,6 @@ open class Preprocessor(protected val regEx: RegExUtil = RegExUtil()) : Processo
         removeNodes(document, "form")
     }
 
-    protected open fun removeComments(node: Node) {
-        var i = 0
-        while (i < node.childNodeSize()) {
-            val child = node.childNode(i)
-            if(child.nodeName() == "#comment") {
-                printAndRemove(child, "removeComments")
-            }
-            else {
-                removeComments(child)
-                i++
-            }
-        }
-    }
-
-
     /**
      * Replaces 2 or more successive <br> elements with a single <p>.
      * Whitespace between <br> elements are ignored. For example:
@@ -119,7 +102,7 @@ open class Preprocessor(protected val regEx: RegExUtil = RegExUtil()) : Processo
             // or non-whitespace. This leaves behind the first <br> in the chain
             // (which will be replaced with a <p> later).
             next = nextElement(next, regEx)
-            while(next != null && next.nodeName() == "br") {
+            while(next != null && next.normalName() == "br") {
                 replaced = true
                 val brSibling = (next as? Element)?.nextSibling()
                 printAndRemove(next, "replaceBrs")
@@ -136,17 +119,27 @@ open class Preprocessor(protected val regEx: RegExUtil = RegExUtil()) : Processo
                 next = p.nextSibling()
                 while(next != null) {
                     // If we've hit another <br><br>, we're done adding children to this <p>.
-                    if(next.nodeName() == "br") {
+                    if(next.normalName() == "br") {
                         val nextElem = this.nextElement(next, regEx)
                         if(nextElem != null && nextElem.tagName() == "br")
                             break
                     }
+
+                    if (!isPhrasingContent(next))
+                        break
 
                     // Otherwise, make this node a child of the new <p>.
                     val sibling = next.nextSibling()
                     p.appendChild(next)
                     next = sibling
                 }
+
+                while (p.lastChild() != null && isWhitespace(p.lastChild())) {
+                    printAndRemove(p.lastChild(), "replaceBrs")
+                }
+
+                if (p.parentNode()?.nameIs("p") == true)
+                    (p.parentNode() as Element).tagName("div")
             }
         }
     }

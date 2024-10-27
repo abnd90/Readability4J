@@ -9,57 +9,118 @@ import java.util.regex.Pattern
 open class MetadataParser(protected val regEx: RegExUtil = RegExUtil()): ProcessorBase() {
 
 
+    private fun unescapeHtmlEntities(str: String?) : String? {
+        if (str.isNullOrEmpty()) return str
+
+        // A map to replace HTML entities with their corresponding characters
+        val htmlEscapeMap = mapOf(
+            "quot" to "\"",
+            "amp" to "&",
+            "apos" to "'",
+            "lt" to "<",
+            "gt" to ">"
+        )
+
+        // First, replace HTML entities
+        val replacedEntities = htmlEscapeMap.entries.fold(str) { acc, (key, value) ->
+            acc.replace("&$key;", value)
+        }
+
+        // Then, replace numeric character references
+        val result = replacedEntities.replace(Regex("&#(?:x([0-9a-fA-F]{1,4})|([0-9]{1,4}));")) { matchResult ->
+            val hex = matchResult.groups[1]?.value
+            val numStr = matchResult.groups[2]?.value
+            val num = hex?.toInt(16) ?: numStr?.toInt() ?: 0
+            num.toChar().toString() // Convert to character
+        }
+
+        return result
+    }
+
     open fun getArticleMetadata(document: Document): ArticleMetadata {
         val metadata = ArticleMetadata()
         val values = HashMap<String, String>()
 
-        // Match "description", or Twitter's "twitter:description" (Cards)
-        // in name attribute.
-        val namePattern = Pattern.compile("^\\s*((twitter)\\s*:\\s*)?(description|title)\\s*$", Pattern.CASE_INSENSITIVE)
+        // property is a space-separated list of values
+        val propertyPattern = Pattern.compile(
+            "\\s*(article|dc|dcterm|og|twitter)\\s*:\\s*(author|creator|description|published_time|title|site_name)\\s*",
+            Pattern.CASE_INSENSITIVE
+        )
 
-        // Match Facebook's Open Graph title & description properties.
-        val propertyPattern = Pattern.compile("^\\s*og\\s*:\\s*(description|title)\\s*$", Pattern.CASE_INSENSITIVE)
+        // name is a single value
+        val namePattern = Pattern.compile(
+            "^\\s*(?:(dc|dcterm|og|twitter|weibo:(article|webpage))\\s*[.:]\\s*)?(author|creator|description|title|site_name)\\s*$",
+            Pattern.CASE_INSENSITIVE
+        )
 
+        // Find description tags.
         document.select("meta").forEach { element ->
             val elementName = element.attr("name")
             val elementProperty = element.attr("property")
+            val content = element.attr("content")
+            if (content.isEmpty()) return@forEach
 
-            if(elementName == "author" || elementProperty == "author") {
-                metadata.byline = element.attr("content")
-                return@forEach
-            }
-
-            var name: String? = null
-            if(namePattern.matcher(elementName).find()) {
-                name = elementName
-            }
-            else if(propertyPattern.matcher(elementProperty).find()) {
-                name = elementProperty
-            }
-
-            if(name != null) {
-                val content = element.attr("content")
-                if(content.isNullOrBlank() == false) {
-                    // Convert to lowercase and remove any whitespace
+            var matches = false
+            var name: String?
+            if (elementProperty.isNotEmpty()) {
+                val matcher = propertyPattern.matcher(elementProperty)
+                if (matcher.find()) {
+                    matches = true
+                    // Convert to lowercase, and remove any whitespace
                     // so we can match below.
-                    name = name.toLowerCase().replace("\\s".toRegex(), "")
-                    values[name] = content.trim().replace("  ", " ")
+                    name = matcher.group().lowercase().replace("\\s+".toRegex(), "")
+                    // multiple authors
+                    values[name] = content.trim()
+                }
+            }
+            if (!matches && elementName.isNotEmpty() && namePattern.matcher(elementName).find()) {
+                name = elementName
+                if (content.isNotEmpty()) {
+                    // Convert to lowercase, remove any whitespace, and convert dots
+                    // to colons so we can match below.
+                    name =
+                        name.lowercase()
+                            .replace("\\s+".toRegex(), "")
+                            .replace("\\.".toRegex(), ":")
+                    values[name] = content.trim()
                 }
             }
         }
 
-        metadata.excerpt = values["description"] ?:
-                           values["og:description"] ?: // Use facebook open graph description.
-                           values["twitter:description"] // Use twitter cards description.
+        // get description
+        metadata.excerpt = values["dc:description"] ?:
+                values["dcterm:description"] ?:
+                values["og:description"] ?:
+                values["weibo:article:description"] ?:
+                values["weibo:webpage:description"] ?:
+                values["description"] ?:
+                values["twitter:description"]
 
-        metadata.title = getArticleTitle(document)
+        // get title
+        metadata.title = values["dc:title"] ?:
+                values["dcterm:title"] ?:
+                values["og:title"] ?:
+                values["weibo:article:title"] ?:
+                values["weibo:webpage:title"] ?:
+                values["title"] ?:
+                values["twitter:title"]
+
         if(metadata.title.isNullOrBlank()) {
-            metadata.title = values["og:title"] ?: // Use facebook open graph title.
-                            values["twitter:title"] // Use twitter cards title.
-                            ?: ""
+            metadata.title = getArticleTitle(document)
         }
 
-        metadata.charset = document.charset()?.name()
+        // get author
+        metadata.byline = values["dc:creator"] ?:
+                values["dcterm:creator"] ?:
+                values["author"]
+
+        metadata.charset = document.charset().name()
+
+        // in many sites the meta value is escaped with HTML entities,
+        // so here we need to unescape it
+        metadata.title = unescapeHtmlEntities(metadata.title)
+        metadata.byline = unescapeHtmlEntities(metadata.byline)
+        metadata.excerpt = unescapeHtmlEntities(metadata.excerpt)
 
         return metadata
     }
@@ -84,14 +145,14 @@ open class MetadataParser(protected val regEx: RegExUtil = RegExUtil()): Process
         var titleHadHierarchicalSeparators = false
 
         // If there's a separator in the title, first remove the final part
-        if(curTitle.contains(" [\\|\\-\\/>»] ".toRegex())) {
-            titleHadHierarchicalSeparators = curTitle.contains(" [\\/>»] ".toRegex())
-            curTitle = origTitle.replace("(.*)[\\|\\-\\/>»] .*".toRegex(RegexOption.IGNORE_CASE), "$1")
+        if(curTitle.contains(" [|\\-/>»] ".toRegex())) {
+            titleHadHierarchicalSeparators = curTitle.contains(" [/>»] ".toRegex())
+            curTitle = origTitle.replace("(.*)[|\\-/>»] .*".toRegex(RegexOption.IGNORE_CASE), "$1")
 
             // If the resulting title is too short (3 words or fewer), remove
             // the first part instead:
             if(wordCount(curTitle) < 3) {
-                curTitle = origTitle.replace("[^\\|\\-\\/>»]*[\\|\\-\\/>»](.*)".toRegex(RegexOption.IGNORE_CASE), "$1")
+                curTitle = origTitle.replace("[^|\\-/>»]*[|\\-/>»](.*)".toRegex(RegexOption.IGNORE_CASE), "$1")
             }
         }
         else if(curTitle.contains(": ")) {
@@ -130,7 +191,7 @@ open class MetadataParser(protected val regEx: RegExUtil = RegExUtil()): Process
         val curTitleWordCount = wordCount(curTitle)
         if(curTitleWordCount <= 4 &&
             (!titleHadHierarchicalSeparators ||
-            curTitleWordCount != wordCount(origTitle.replace("[\\|\\-\\/>»]+".toRegex(), "")) - 1)) {
+            curTitleWordCount != wordCount(origTitle.replace("[|\\-/>»]+".toRegex(), "")) - 1)) {
             curTitle = origTitle
         }
 

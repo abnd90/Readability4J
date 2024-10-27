@@ -5,6 +5,7 @@ import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 import org.slf4j.LoggerFactory
+import java.util.Arrays
 
 /**
  * Contains common utils for Preprocessor and Postprocessor
@@ -15,8 +16,20 @@ abstract class ProcessorBase {
         protected const val TruncateLogOutput = false
 
         private val log = LoggerFactory.getLogger(ProcessorBase::class.java)
+
+        val PHRASING_ELEMS = Arrays.asList(
+            "abbr", "audio", "b", "bdo", "br", "button", "cite", "code", "data",
+            "datalist", "dfn", "em", "embed", "i", "img", "input", "kbd", "label",
+            "mark", "math", "meter", "noscript", "object", "output", "progress", "q",
+            "ruby", "samp", "script", "select", "small", "span", "strong", "sub",
+            "sup", "textarea", "time", "var", "wbr")
     }
 
+
+    protected fun isWhitespace(node: Node): Boolean {
+        return (node is TextNode && node.text().trim().isEmpty()) ||
+                (node is Element && node.tagName() == "br")
+    }
 
     protected open fun removeNodes(element: Element, tagName: String, filterFunction: ((Element) -> Boolean)? = null) {
         element.getElementsByTag(tagName).reversed().forEach { childElement ->
@@ -68,6 +81,12 @@ abstract class ProcessorBase {
         }
 
         return next as? Element
+    }
+
+    protected fun isPhrasingContent(node: Node): Boolean {
+        return node is TextNode || PHRASING_ELEMS.contains(node.normalName()) ||
+                ((node.normalName() == "a" || node.normalName() == "del" || node.normalName() == "ins") &&
+                        node.childNodes().all { isPhrasingContent(it) })
     }
 
     /**
