@@ -1112,7 +1112,7 @@ open class ArticleGrabber(protected val options: ReadabilityOptions, protected v
      * provided one.
      */
     protected open fun hasAncestorTag(node: Element, tagName: String, maxDepth: Int = 3, filterFn: ((Element) -> Boolean)? = null): Boolean {
-        val tagNameLowerCase = tagName.toLowerCase()
+        val tagNameLowerCase = tagName.lowercase()
         var parent = node
         var depth = 0
 

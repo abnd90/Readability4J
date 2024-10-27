@@ -24,7 +24,7 @@ open class Preprocessor(protected val regEx: RegExUtil = RegExUtil()) : Processo
         log.debug("Starting to prepare document")
 
         removeScripts(document)
-        removeNoscripts(document);
+        removeNoscripts(document)
 
         removeStyles(document)
 
